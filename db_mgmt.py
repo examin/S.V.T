@@ -14,6 +14,7 @@ argparser = argparse.ArgumentParser(description='populate/update the local CVE d
 argparser.add_argument('-u', action='store_true', help='update the database')
 argparser.add_argument('-p', action='store_true', help='populate the database')
 argparser.add_argument('-f', help='process a local xml file')
+argparser.add_argument('-v', action='store_true', help='verbose output')
 args = argparser.parse_args()
 
 #init parts of the file names to enable looped file download
@@ -25,6 +26,10 @@ file_rec = "recent"
 # get the current year. This enables us to download all CVE's up to this year :-) 
 date = datetime.datetime.now()
 year = date.year+1
+
+# default values if not set in XML
+defaultvalue = {}
+defaultvalue['cvss'] = "5"
 
 # define the CVE parser. Thanks to Meredith Patterson (@maradydd) for help on this one.
 class CVEHandler(ContentHandler):
@@ -85,7 +90,7 @@ if __name__=='__main__':
     collection = db.cves
     parser = make_parser()
     ch = CVEHandler()
-    parser.setContentHandler(ch)	
+    parser.setContentHandler(ch)
     # start here if it's an update.
     if args.u:
         # get the 'modified' file
@@ -101,7 +106,9 @@ if __name__=='__main__':
             x=collection.find({'id': item['id']})
             # if so, update the entry.
             if x.count() > 0:
-                collection.update({'id': item['id']}, {"$set": {'cvss': item['cvss'],'summary': item['summary'], 'references': item['references'], 'vulnerable_configuration': item['vulnerable_configuration'], 'last-modified': item['Modified']}}) 
+                if 'cvss' not in item:
+                    item['cvss'] = defaultvalue['cvss']
+                collection.update({'id': item['id']}, {"$set": {'cvss': item['cvss'],'summary': item['summary'], 'references': item['references'], 'vulnerable_configuration': item['vulnerable_configuration'], 'last-modified': item['Modified']}})
             else:
                 collection.insert(item)
         # get the 'recent' file
@@ -116,7 +123,10 @@ if __name__=='__main__':
             x=collection.find({'id': item['id']})
             # if so, update the entry.
             if x.count() > 0:
-                print("item found : "+item['id'])
+                if args.v:
+                    print("item found : "+item['id'])
+                if 'cvss' not in item:
+                    item['cvss'] = defaultvalue['cvss']
                 collection.update({'id': item['id']}, {"$set": {'cvss': item['cvss'],'summary': item['summary'], 'references': item['references'], 'vulnerable_configuration': item['vulnerable_configuration'], 'last-modified': item['Modified']}})
             # if not, create it.
             else:
@@ -125,10 +135,11 @@ if __name__=='__main__':
         # populate is pretty straight-forward, just grab all the files from NVD
         # and dump them into a DB.
         x=collection.find({'id': 'CVE-2002-001'})
-        print(str(x.count()))
+        if args.v:
+            print(str(x.count()))
         if x.count() > 1 :
             print("database already populated")
-        else:  
+        else:
             for x in range(2002,year):
                 parser = make_parser()
                 ch = CVEHandler()
@@ -136,6 +147,7 @@ if __name__=='__main__':
                 getfile = file_prefix+str(x)+file_suffix
                 f = urlopen("http://static.nvd.nist.gov/feeds/xml/cve/"+getfile)
                 parser.parse(f)
-                for item in ch.cves:
-                    print(item['id'])
+                if args.v:
+                    for item in ch.cves:
+                        print(item['id'])
                 collection.insert(ch.cves)
